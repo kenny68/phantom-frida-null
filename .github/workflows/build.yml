@@ -106,7 +106,15 @@ jobs:
       - name: Build command
         id: cmd
         run: |
-          CMD="python3 build.py --version ${{ inputs.frida_version }}"
+          # frida 16.x 用 build16.py，17.x 用原来的 build.py
+          MAJOR=$(echo "${{ inputs.frida_version }}" | cut -d. -f1)
+          if [ "$MAJOR" = "16" ]; then
+            SCRIPT="build16.py"
+          else
+            SCRIPT="build.py"
+          fi
+
+          CMD="python3 $SCRIPT --version ${{ inputs.frida_version }}"
           CMD="$CMD --name ${{ inputs.custom_name }}"
           CMD="$CMD --arch ${{ inputs.arch }}"
           CMD="$CMD --skip-clone --ndk-path build/android-ndk-r29"
@@ -115,11 +123,9 @@ jobs:
           if [ -n "${{ inputs.port }}" ]; then
             CMD="$CMD --port ${{ inputs.port }}"
           fi
-
           if [ "${{ inputs.extended }}" = "true" ]; then
             CMD="$CMD --extended"
           fi
-
           if [ "${{ inputs.temp_fixes }}" = "true" ]; then
             CMD="$CMD --temp-fixes"
           fi
