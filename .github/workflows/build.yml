@@ -58,7 +58,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential curl git python3 unzip
 
-      # Cache NDK (~1.5 GB) — saves ~3 min on subsequent runs
       - name: Cache NDK
         uses: actions/cache@v4
         id: ndk-cache
@@ -74,11 +73,12 @@ jobs:
             https://dl.google.com/android/repository/android-ndk-r29-linux.zip
           cd build && unzip -q android-ndk-r29-linux.zip && rm android-ndk-r29-linux.zip
 
-      # Always clone fresh — avoids stale cache / missing configure issues
-      - name: Clone Frida
+      - name: Clone Frida fresh
         run: |
+          rm -rf build/frida
           git clone --recurse-submodules --branch ${{ inputs.frida_version }} --depth 1 \
             https://github.com/frida/frida.git build/frida
+          echo "configure exists: $(ls build/frida/configure 2>/dev/null || echo 'NOT FOUND')"
 
       - name: Build command
         id: cmd
