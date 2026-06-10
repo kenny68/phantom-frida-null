@@ -76,19 +76,27 @@ jobs:
       - name: Clone Frida fresh
         run: |
           rm -rf build/frida
-          git clone --recurse-submodules --branch ${{ inputs.frida_version }} --depth 1 \
+          git clone --branch ${{ inputs.frida_version }} --depth 1 \
             https://github.com/frida/frida.git build/frida
+          cd build/frida
+          git submodule update --init --recursive
+          echo "=== submodules done ==="
+          echo "releng exists: $(ls releng/ | head -5)"
 
       - name: Generate configure script
         run: |
           cd build/frida
-          echo "=== Checking configure ==="
-          if [ ! -f "./configure" ]; then
-            echo "configure NOT found, running releng/setup.py..."
+          if [ -f "releng/setup.py" ]; then
+            echo "Found releng/setup.py, running..."
             python3 releng/setup.py
+          elif [ -f "configure" ]; then
+            echo "configure already exists, skipping"
           else
-            echo "configure already exists"
+            echo "ERROR: neither releng/setup.py nor configure found"
+            ls -la
+            exit 1
           fi
+          echo "=== configure check ==="
           ls -la configure
 
       - name: Build command
