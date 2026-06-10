@@ -160,35 +160,71 @@ def patch_ndk_version_check(frida_dir, ndk_path):
         warn("releng/setup-env.sh not found, skipping NDK version patch")
         return
 
+    # 获取实际 NDK 版本号
     ndk_abs = os.path.abspath(ndk_path)
     ndk_dir_name = os.path.basename(ndk_abs)
-    m = re.search(r'(r\d+\w*)', ndk_dir_name)
-    actual_ver = m.group(1) if m else "r25c"
+    m = re.search(r'(r\d+[a-z]*)', ndk_dir_name, re.IGNORECASE)
+    actual_ver = m.group(1).lower() if m else "r25c"
 
     with open(setup_env, "r") as f:
         content = f.read()
 
-    new_content = re.sub(
-        r'(ndk_required=)["\']?r\d+\w*["\']?',
-        f'\\g<1>{actual_ver}',
+    modified = False
+
+    # 修复1：把 #!/bin/sh 改成 #!/bin/bash，解决 bash 语法不兼容问题
+    if content.startswith("#!/bin/sh"):
+        content = "#!/bin/bash" + content[len("#!/bin/sh"):]
+        ok("Patched setup-env.sh: #!/bin/sh -> #!/bin/bash")
+        modified = True
+
+    # 修复2：替换 ndk_required 变量值（多种格式）
+    patterns = [
+        (r'ndk_required="r\d+[a-z]*"',   f'ndk_required="{actual_ver}"'),
+        (r"ndk_required='r\d+[a-z]*'",   f"ndk_required='{actual_ver}'"),
+        (r'ndk_required=r\d+[a-z]*\b',   f'ndk_required={actual_ver}'),
+    ]
+    for pattern, replacement in patterns:
+        new_content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
+        if new_content != content:
+            content = new_content
+            ok(f"Patched setup-env.sh: ndk_required -> {actual_ver}")
+            modified = True
+            break
+
+    # 修复3：如果还是没找到，直接在文件头部插入覆盖变量
+    if not modified or 'ndk_required' not in content:
+        # 在 shebang 之后第一行插入
+        lines = content.split('\n')
+        insert_idx = 1
+        for i, line in enumerate(lines):
+            if line.startswith('#!'):
+                insert_idx = i + 1
+                break
+        lines.insert(insert_idx, f'\n# NDK version override by build16.py\nndk_required={actual_ver}\n')
+        content = '\n'.join(lines)
+        ok(f"Injected ndk_required={actual_ver} into setup-env.sh")
+        modified = True
+
+    # 修复4：注释掉 NDK 版本不匹配时的 exit 1
+    # 找到类似 "Unsupported NDK version" 后面的 exit 1
+    content = re.sub(
+        r'(echo.*[Uu]nsupported NDK.*\n)',
+        r'# \1',
+        content
+    )
+    content = re.sub(
+        r'(echo.*NDK.*[Pp]lease install.*\n)',
+        r'# \1',
         content
     )
 
-    if new_content != content:
-        with open(setup_env, "w") as f:
-            f.write(new_content)
-        ok(f"Patched releng/setup-env.sh: ndk_required -> {actual_ver}")
+    with open(setup_env, "w") as f:
+        f.write(content)
+
+    if modified:
+        ok(f"setup-env.sh patched successfully (NDK={actual_ver}, bash mode)")
     else:
-        warn("ndk_required not found, trying to comment out NDK check block")
-        new_content = re.sub(
-            r'(\s*)(if \[.*ndk_required.*\].*\n[\s\S]*?fi)',
-            r'\1# NDK check disabled by build16.py\n',
-            content,
-            count=1
-        )
-        with open(setup_env, "w") as f:
-            f.write(new_content)
-        ok("Commented out NDK version check block")
+        warn("setup-env.sh: no changes made")
 
 
 def build_frida16(frida_dir, arch, ndk_path, output_dir):
@@ -208,8 +244,6 @@ def build_frida16(frida_dir, arch, ndk_path, output_dir):
         env["ANDROID_NDK_ROOT"] = ndk_abs
         env["ANDROID_NDK_HOME"] = ndk_abs
         info(f"NDK: {ndk_abs}")
-
-    patch_ndk_version_check(frida_dir, ndk_path)
 
     targets = [
         f"server-android-{make_arch}",
@@ -334,6 +368,12 @@ def main():
         else:
             err(f"Source not found at {frida_dir}")
             sys.exit(1)
+
+    # NDK 修复必须在 phase1 字符串替换之前执行
+    # 否则 setup-env.sh 被替换后正则匹配失败
+    if ndk_path:
+        hdr("PRE-PATCH: Fix NDK version check")
+        patch_ndk_version_check(frida_dir, ndk_path)
 
     phase1_global_patches(frida_dir, name)
     phase2_targeted_patches(frida_dir, name)
