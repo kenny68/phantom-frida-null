@@ -78,7 +78,18 @@ jobs:
           rm -rf build/frida
           git clone --recurse-submodules --branch ${{ inputs.frida_version }} --depth 1 \
             https://github.com/frida/frida.git build/frida
-          echo "configure exists: $(ls build/frida/configure 2>/dev/null || echo 'NOT FOUND')"
+
+      - name: Generate configure script
+        run: |
+          cd build/frida
+          echo "=== Checking configure ==="
+          if [ ! -f "./configure" ]; then
+            echo "configure NOT found, running releng/setup.py..."
+            python3 releng/setup.py
+          else
+            echo "configure already exists"
+          fi
+          ls -la configure
 
       - name: Build command
         id: cmd
