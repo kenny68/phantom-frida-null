@@ -195,6 +195,17 @@ def build_frida16(frida_dir, arch, ndk_path, output_dir):
     target = f"server-android-{make_arch}"
     info(f"make target: {target}")
 
+    # frida 16.x 需要 NDK r25，修改 setup-env.sh 跳过版本检查
+      setup_env = os.path.join(frida_dir, "releng", "setup-env.sh")
+      if os.path.exists(setup_env):
+          with open(setup_env, "r") as f:
+              content = f.read()
+          # 允许任何 NDK 版本
+          content = re.sub(r'ndk_required=r\d+\w*', 'ndk_required=r25c', content)
+          with open(setup_env, "w") as f:
+              f.write(content)
+          info("Patched releng/setup-env.sh: ndk_required -> r25c")
+
     # 先 make 依赖
     rc = run(
         f"make {target}",
