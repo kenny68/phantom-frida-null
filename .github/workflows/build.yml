@@ -80,24 +80,28 @@ jobs:
             https://github.com/frida/frida.git build/frida
           cd build/frida
           git submodule update --init --recursive
-          echo "=== submodules done ==="
-          echo "releng exists: $(ls releng/ | head -5)"
 
       - name: Generate configure script
         run: |
           cd build/frida
-          if [ -f "releng/setup.py" ]; then
-            echo "Found releng/setup.py, running..."
-            python3 releng/setup.py
-          elif [ -f "configure" ]; then
-            echo "configure already exists, skipping"
+          echo "=== releng contents ==="
+          ls releng/
+          echo "=== frida-core contents ==="
+          ls frida-core/
+          # frida 16.x 的 configure 在 frida-core 里
+          if [ -f "frida-core/configure" ]; then
+            echo "configure found in frida-core/"
+            # 复制到根目录让 build.py 能找到
+            cp frida-core/configure ./configure
+            chmod +x ./configure
+          elif [ -f "releng/configure" ]; then
+            cp releng/configure ./configure
+            chmod +x ./configure
           else
-            echo "ERROR: neither releng/setup.py nor configure found"
-            ls -la
-            exit 1
+            echo "=== searching for configure ==="
+            find . -name "configure" -not -path "./.git/*" 2>/dev/null
           fi
-          echo "=== configure check ==="
-          ls -la configure
+          ls -la configure 2>/dev/null || echo "configure not found"
 
       - name: Build command
         id: cmd
