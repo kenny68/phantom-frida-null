@@ -2,7 +2,6 @@ name: Weekly Stealth Build
 
 on:
   schedule:
-    # Every Sunday at 03:00 UTC
     - cron: '0 3 * * 0'
   workflow_dispatch:
     inputs:
@@ -78,27 +77,12 @@ jobs:
             https://dl.google.com/android/repository/android-ndk-r29-linux.zip
           cd build && unzip -q android-ndk-r29-linux.zip && rm android-ndk-r29-linux.zip
 
-      - name: Cache Frida source
-        uses: actions/cache@v4
-        id: frida-cache
-        with:
-          path: build/frida
-          key: frida-${{ steps.version.outputs.version }}-source
-
-      - name: Clone Frida
-        if: steps.frida-cache.outputs.cache-hit != 'true'
+      - name: Clone Frida fresh
         run: |
+          rm -rf build/frida
           git clone --recurse-submodules --branch ${{ steps.version.outputs.version }} --depth 1 \
             https://github.com/frida/frida.git build/frida
-
-      - name: Prepare fresh source from cache
-        if: steps.frida-cache.outputs.cache-hit == 'true'
-        run: |
-          cd build/frida
-          git checkout -- .
-          git submodule foreach --recursive 'git checkout -- . || true'
-          git clean -fdx || true
-          rm -rf build/
+          echo "configure exists: $(ls build/frida/configure 2>/dev/null || echo 'NOT FOUND')"
 
       - name: Build
         run: |
@@ -152,6 +136,7 @@ jobs:
         run: |
           TAG="v${{ steps.version.outputs.version }}-$(date +%Y%m%d)"
           TITLE="Stealth Build — ${{ steps.random.outputs.name }} (Frida ${{ steps.version.outputs.version }})"
+
           cat > /tmp/release.md <<RELEASE_EOF
           ## Stealth Frida Server
 
@@ -165,20 +150,12 @@ jobs:
 
           ### Deploy
           \`\`\`bash
-          # Extract
           gunzip ${{ steps.random.outputs.name }}-server-*-android-arm64.gz
-
-          # Push to device
           adb push ${{ steps.random.outputs.name }}-server-*-android-arm64 /data/local/tmp/${{ steps.random.outputs.name }}-server
           adb shell chmod 755 /data/local/tmp/${{ steps.random.outputs.name }}-server
-
-          # Start
           adb shell /data/local/tmp/${{ steps.random.outputs.name }}-server -D &
           frida -H 127.0.0.1:${{ steps.random.outputs.port }} -f com.example.app
           \`\`\`
-
-          ### Connect
-          Standard \`frida-tools\` (\`pip install frida-tools\`) connects normally — use \`-H 127.0.0.1:${{ steps.random.outputs.port }}\` instead of \`-U\`.
           RELEASE_EOF
 
           gh release create "$TAG" output/*.gz output/build-info.json \
@@ -189,18 +166,9 @@ jobs:
       - name: Build summary
         run: |
           echo "## Weekly Stealth Build" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Frida version | ${{ steps.version.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Custom name | ${{ steps.random.outputs.name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Custom port | ${{ steps.random.outputs.port }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Architecture | ${{ inputs.arch || 'android-arm64' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Deploy:" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "adb push ${{ steps.random.outputs.name }}-server /data/local/tmp/${{ steps.random.outputs.name }}-server" >> $GITHUB_STEP_SUMMARY
-          echo "adb shell chmod 755 /data/local/tmp/${{ steps.random.outputs.name }}-server" >> $GITHUB_STEP_SUMMARY
-          echo "adb shell /data/local/tmp/${{ steps.random.outputs.name }}-server &" >> $GITHUB_STEP_SUMMARY
-          echo "frida -H 127.0.0.1:${{ steps.random.outputs.port }} -f com.example.app" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
